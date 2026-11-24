@@ -9,12 +9,10 @@
 </p>
 
 <p align="center">
-  <strong>Aplicação web hospedada no Netlify</strong>
+  <a href="https://transcritor-aulas.netlify.app/"><strong>Acessar o Transcritor de Aulas</strong></a>
+  <br>
+  <a href="https://transcritor-aulas.netlify.app/">transcritor-aulas.netlify.app</a>
 </p>
-
-<!-- URL pública do site não confirmada. Substitua a linha abaixo pelo endereço exibido no painel do Netlify. -->
-
-**Acesse o site:** endereço de produção a confirmar no painel do Netlify.
 
 ---
 
