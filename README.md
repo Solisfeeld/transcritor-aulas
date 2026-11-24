@@ -1,145 +1,190 @@
-# Transcritor de Aulas
+<h1 align="center">Transcritor de Aulas</h1>
 
-Aplicação web para transcrever áudios e vídeos inteiros ou por intervalo, com seleção de idiomas e marcações de tempo. O frontend estático é publicado no **Netlify**; o áudio é extraído por **FFmpeg.wasm** no navegador e transcrito com **Cloudflare Workers AI**.
+<p align="center">
+  Transcrição de áudios e vídeos com inteligência artificial, marcações de tempo e exportação de resultados.
+</p>
+
+<p align="center">
+  <strong>HTML · CSS · JavaScript · FFmpeg.wasm · Whisper · Cloudflare Workers AI · Netlify</strong>
+</p>
+
+<p align="center">
+  <strong>Aplicação web hospedada no Netlify</strong>
+</p>
+
+<!-- URL pública do site não confirmada. Substitua a linha abaixo pelo endereço exibido no painel do Netlify. -->
+
+**Acesse o site:** endereço de produção a confirmar no painel do Netlify.
+
+---
+
+[Sobre](#sobre) · [Funcionalidades](#funcionalidades) · [Como usar](#como-usar) · [Arquitetura](#arquitetura) · [Configuração](#configuração) · [Deploy](#deploy-no-netlify) · [Segurança](#segurança-e-limitações)
+
+## Sobre
+
+O **Transcritor de Aulas** é uma aplicação web para transformar fala em texto, seja de uma aula inteira ou de um intervalo específico. O áudio é extraído no navegador e enviado em blocos a dois Cloudflare Workers, que realizam a transcrição com Whisper. O texto é organizado cronologicamente e pode ser copiado ou exportado.
+
+O frontend é hospedado no **Netlify**. O GitHub é utilizado para versionamento e documentação do código-fonte e aciona o deploy automático no Netlify.
 
 ## Funcionalidades
 
-- Upload de vídeo/áudio e links diretos de mídia compatíveis com o proxy.
-- Aula inteira ou **Somente trecho**, incluindo **Desde o início** e **Até o final**.
-- Se o fim digitado ultrapassar a duração real da mídia, o sistema limita o intervalo automaticamente.
-- Horários por digitação progressiva: `1` → `00:00:01`; `12` → `00:00:12`; `123` → `00:01:23`.
-- Idiomas: Automático (padrão), Português, Japonês, Inglês, Espanhol, Francês, Alemão, Italiano, Coreano e Chinês.
-- Dois Workers processando blocos alternados em paralelo; os resultados são ordenados pelos timestamps.
-- Blocos principais de até **5 minutos**, recuperação em blocos de até **2 minutos** e subdivisões menores se necessário, até aproximadamente 3 segundos.
-- Failover de cota, cancelamento, tema claro/escuro, cópia e downloads em TXT/VTT.
+| Recurso | Descrição |
+| --- | --- |
+| Origem da mídia | Seleção de arquivo, arrastar e soltar ou link direto compatível com o proxy. |
+| Intervalos | Aula inteira ou somente trecho, com início e fim editáveis. A opção **Até o final** usa a duração real da mídia. |
+| Horários | Digitação progressiva no formato `HH:MM:SS`, colagem de horários e ajuste automático do fim. |
+| Idiomas | Detecção automática ou seleção manual de nove idiomas. |
+| Processamento paralelo | Dois Workers processam blocos alternados de até cinco minutos. |
+| Recuperação | Em erros recuperáveis, os blocos são divididos em partes de até dois minutos e, se necessário, em trechos menores. |
+| Failover | Tentativa de encaminhar a transcrição ao outro Worker em caso de erro explícito de cota. |
+| Resultados | Timestamps, cópia do texto e exportação TXT e VTT. |
+| Interface | Tema claro/escuro, progresso e cancelamento. |
+
+## Como usar
+
+1. Abra o transcritor e selecione um arquivo de áudio ou vídeo, ou informe um link direto compatível.
+2. Escolha o idioma do áudio. **Automático** é a primeira opção e o padrão quando não existe preferência salva.
+3. Escolha **Aula inteira** ou **Somente trecho**.
+4. Clique em **Transcrever** e acompanhe o progresso.
+5. Copie o texto ou baixe o resultado em TXT ou VTT.
+
+### Intervalos de transcrição
+
+| Objetivo | Início | Fim |
+| --- | --- | --- |
+| Do começo até 15 minutos | `00:00:00` | `00:15:00` |
+| Dos 15 aos 35 minutos | `00:15:00` | `00:35:00` |
+| Dos 37 minutos até o fim | `00:37:00` | Marque **Até o final** |
+
+Se o horário final informado exceder a duração real do vídeo, o sistema limita o intervalo automaticamente. Para começar do início, basta informar `00:00:00`.
+
+Na digitação progressiva, os números entram pela direita: `1` → `00:00:01`, `12` → `00:00:12`, `123` → `00:01:23`. `Backspace` apaga o último dígito e `Delete` zera o horário.
+
+### Idiomas
+
+Automático, Português, Japonês, Inglês, Espanhol, Francês, Alemão, Italiano, Coreano e Chinês. A preferência é salva no navegador. A transcrição é realizada no idioma do áudio, não traduzida.
 
 ## Arquitetura
 
-```text
-Arquivo / URL de mídia
-        |
-        v
-Frontend estático (Netlify)
-        |
-        v
-FFmpeg.wasm (WAV mono PCM 16 kHz)
-        |
-        +-- Blocos 1, 3, 5... --> Worker principal (Workers AI, conta A)
-        |
-        +-- Blocos 2, 4, 6... --> Worker reserva   (Workers AI, conta B)
-                   |                  |
-                   +---- timestamps --+
-                            |
-                      ordenação / TXT / VTT
+```mermaid
+flowchart TD
+    A[Áudio ou vídeo] --> B[Frontend Netlify]
+    B --> C[FFmpeg.wasm no navegador]
+    C --> D[Blocos WAV de até 5 minutos]
+    D --> E[Worker principal]
+    D --> F[Worker reserva]
+    E --> G[Cloudflare Workers AI]
+    F --> H[Cloudflare Workers AI]
+    G --> I[Ordenação por timestamps]
+    H --> I
+    I --> J[TXT / VTT / Copiar]
 ```
 
-O frontend extrai os blocos com FFmpeg de forma serializada para não executar dois processos simultâneos na mesma instância do navegador, enquanto os pedidos de transcrição podem ocorrer em paralelo. O balanceamento normal é aproximadamente 50/50 e pode mudar em caso de erro ou falta de cota.
+O FFmpeg extrai WAV mono PCM de 16 kHz no navegador. A extração é serializada em uma única instância do FFmpeg, enquanto até duas filas de transcrição podem operar em paralelo. A distribuição normal é aproximadamente equilibrada; retries, falhas e failover podem alterar esse equilíbrio.
 
-Cada Worker chama `@cf/openai/whisper-large-v3-turbo` e pode tentar `@cf/openai/whisper` em alguns erros de decodificação. A aplicação tenta usar o outro Worker quando recebe erro explícito de cota; isso não garante disponibilidade.
+Cada Worker utiliza `@cf/openai/whisper-large-v3-turbo` e, em alguns erros de decodificação, pode recorrer a `@cf/openai/whisper`. O resultado é ordenado por timestamp independentemente da ordem em que os pedidos terminam.
 
-## Configuração sem URLs fixas no código
+## Tecnologias
 
-As URLs dos Workers **não ficam gravadas em `app.js`**. No deploy manual do Netlify, um script local lê `.env` e gera `deploy-netlify/config.js`, que é carregado antes de `app.js`.
+| Camada | Tecnologia |
+| --- | --- |
+| Interface | HTML, CSS, JavaScript |
+| Processamento local | FFmpeg.wasm |
+| Backend | Cloudflare Workers |
+| Reconhecimento de fala | Cloudflare Workers AI / Whisper |
+| Hospedagem | Netlify |
+| Preparação do deploy | Python 3, sem dependências adicionais |
+| Versionamento | Git e GitHub |
 
-**Atenção:** URLs de endpoints públicos não são credenciais. `config.js` é enviado ao navegador e poderá ser visualizado por qualquer visitante. Variáveis de ambiente facilitam configuração/versionamento, mas **não escondem** URLs públicas. Nunca coloque chaves ou tokens nesse arquivo.
-
-### 1. Cloudflare: Worker reserva
-
-Crie ou atualize o Worker usando `worker-reserva.js` e configure o binding **Workers AI** chamado `AI` em **Settings → Bindings**. Publique. O diagnóstico GET deve incluir `"versao":"13.6-reserva"`.
-
-### 2. Cloudflare: Worker principal
-
-Use `worker-principal.js`, configure o binding **Workers AI** chamado `AI` e crie em **Settings → Variables and secrets** uma variável de texto:
+## Estrutura do projeto
 
 ```text
-BACKUP_WORKER_URL=https://URL-REAL-DO-WORKER-RESERVA/
+transcritor-aulas/
+├── .env.example                 # Modelo de configuração pública
+├── .gitignore                   # Arquivos locais e gerados ignorados
+├── README.md
+├── _headers                     # Cabeçalhos de isolamento do Netlify
+├── app.js                       # Processamento e interface
+├── favicon.svg
+├── index.html
+├── netlify.toml                 # Build e publicação automática
+├── style.css
+├── worker-principal.js          # Worker principal e failover
+├── worker-reserva.js            # Worker reserva
+└── scripts/
+    └── preparar_netlify.py      # Geração do frontend publicável
 ```
 
-Esse valor é configurado **na conta Cloudflare do Worker principal**, não no código-fonte e não no `.env` do frontend. Quando a cota do principal termina, o código lê `env.BACKUP_WORKER_URL` para encaminhar o WAV ao reserva.
+## Configuração
 
-O diagnóstico GET deve mostrar `"versao":"13.6-primary"` e `"backup_configurado":true`.
+### Cloudflare Workers
 
-**Observação:** ambos os Workers importam `node:buffer`; mantenha o ambiente/configuração de compatibilidade Node.js exigido por sua implantação Cloudflare. Os nomes dos arquivos no GitHub não alteram os Workers já publicados. Nesta atualização de configuração não é necessário publicar os Workers novamente.
+Para uma instalação nova, crie os dois Workers e publique os respectivos arquivos JavaScript. Configure o binding **Workers AI** com o nome `AI` em ambos. Mantenha a compatibilidade Node.js exigida pelo uso de `node:buffer` (flag `nodejs_compat`, quando necessária).
 
-### 3. Configurar o frontend localmente
+No Worker principal, em **Settings → Variables and secrets**, cadastre a variável de texto `BACKUP_WORKER_URL` com a URL HTTPS do Worker reserva. Essa variável permite o failover no backend.
 
-Requisitos: **Python 3**, instalado na maioria das distribuições Linux. Nenhuma dependência adicional do Python.
+Para verificar a publicação, abra a URL de cada Worker. O diagnóstico do principal deve indicar `"versao":"13.6-primary"` e `"backup_configurado":true`; o reserva deve indicar `"versao":"13.6-reserva"`. Essas respostas confirmam a versão e a presença da configuração, não um teste completo da transcrição.
 
-Primeiro, na raiz do repositório, crie seu arquivo local `.env` (se não o tiver recebido no pacote):
+### Variáveis do frontend
+
+No Netlify, configure as duas variáveis na interface do projeto; o ambiente de build tem prioridade. Para desenvolvimento local, na raiz do repositório, crie `.env` a partir do modelo, caso ainda não exista:
 
 ```bash
 cp .env.example .env
 ```
 
-Edite `.env` e informe as URLs reais dos dois Workers:
+Preencha as URLs reais:
 
 ```dotenv
 PRIMARY_WORKER_URL=https://seu-worker-principal.seu-subdominio.workers.dev/
-BACKUP_WORKER_URL=https://seu-worker-reserva.seu-outro-subdominio.workers.dev/
+BACKUP_WORKER_URL=https://seu-worker-reserva.seu-subdominio.workers.dev/
 ```
 
-**Não confundir:** `BACKUP_WORKER_URL` no `.env` local serve somente para configurar o frontend. A variável com o mesmo nome, em **Cloudflare → Worker principal → Settings**, precisa continuar cadastrada lá para o failover do backend.
+A variável `BACKUP_WORKER_URL` do frontend não substitui a variável de mesmo nome configurada no Worker principal. São configurações independentes.
 
-Gere a pasta pronta para deploy:
+## Deploy no Netlify
+
+O deploy é automático a partir do repositório GitHub conectado ao Netlify. Não é necessário enviar arquivos manualmente a cada atualização.
+
+### Configuração inicial
+
+1. Conecte o repositório GitHub ao projeto existente no Netlify e selecione a branch `main` para produção.
+2. Em **Project configuration → Environment variables**, cadastre `PRIMARY_WORKER_URL` e `BACKUP_WORKER_URL` com as URLs HTTPS dos respectivos Workers. As variáveis precisam estar disponíveis ao build de produção.
+3. Mantenha o diretório base na raiz do repositório. O arquivo `netlify.toml` define o comando `python3 scripts/preparar_netlify.py` e o diretório de publicação `deploy-netlify`.
+4. Faça um deploy pelo Netlify ou envie um commit à branch de produção.
+
+O script gera `config.js` a partir das variáveis do ambiente de build. Para testar localmente, também é possível configurar `.env` e executar:
 
 ```bash
 python3 scripts/preparar_netlify.py
 ```
 
-O comando valida URLs e cria exatamente:
+A saída contém apenas os arquivos publicáveis:
 
 ```text
 deploy-netlify/
 ├── _headers
 ├── app.js
-├── config.js       # gerado a partir do .env
+├── config.js
 ├── favicon.svg
 ├── index.html
 └── style.css
 ```
 
-No Netlify, abra o site existente → **Deploys** → **deploy manual** e arraste a pasta **`deploy-netlify` inteira**. Não arraste a raiz do repositório. A cada alteração em `.env` ou no frontend, execute novamente o comando e publique essa pasta.
+O arquivo `_headers` mantém os cabeçalhos COOP/COEP necessários ao FFmpeg.wasm. Após publicar, recarregue o site e teste uma transcrição curta. Os Workers só precisam de novo deploy quando seu próprio código ou configuração mudar.
 
-Depois abra o site com `Ctrl+Shift+R` e transcreva um trecho curto.
+## Segurança e limitações
 
-### 4. GitHub
+- Mantenha `.env`, `config.js` e `deploy-netlify/` fora do Git. Versione apenas `.env.example` com valores de exemplo.
+- As URLs dos Workers são públicas por natureza. `config.js` é enviado ao navegador e não deve conter tokens, senhas nem chaves privadas. Variáveis de ambiente não tornam os endpoints privados.
+- O proxy aceita URLs HTTPS de mídia do domínio `cdn.estrategiaconcursos.com.br`. Links assinados podem expirar.
+- O backend rejeita blocos WAV acima de 20 MB. O processamento depende da memória, da CPU do dispositivo, da conexão e das cotas dos serviços.
+- O failover não garante disponibilidade. Respeite os limites e termos dos provedores e considere controles de acesso e de requisições para proteger os endpoints públicos.
+- O cancelamento interrompe a execução local e os pedidos do navegador; uma inferência já iniciada no servidor pode continuar.
+- A qualidade da transcrição depende do áudio, do idioma e do modelo.
 
-Versione os arquivos de código, a documentação, o script e `.env.example`:
+## Manutenção
 
-```bash
-git add app.js index.html README.md .gitignore .env.example scripts/preparar_netlify.py
-git commit -m "refactor: move configuracao dos workers para variaveis de ambiente"
-git push origin main
-```
+Para versionar uma alteração de frontend, revise `git status`, adicione somente os arquivos alterados e envie o commit ao GitHub. Não publique o `.env` ou a saída gerada. O push na branch de produção aciona o build e o deploy automático no Netlify.
 
-`.env`, `config.js` e `deploy-netlify/` devem permanecer ignorados. Confirme com `git status` e `git check-ignore .env deploy-netlify/config.js`.
-
-## Estrutura do repositório
-
-```text
-transcritor-aulas/
-├── .env.example                # modelo público; não contém os valores reais
-├── .gitignore                  # ignora .env e saída gerada
-├── README.md
-├── _headers
-├── app.js
-├── favicon.svg
-├── index.html
-├── style.css
-├── worker-principal.js        # Cloudflare, usa env.BACKUP_WORKER_URL
-├── worker-reserva.js          # Cloudflare, binding env.AI
-└── scripts/
-    └── preparar_netlify.py   # gera deploy-netlify/config.js
-```
-
-## Segurança, limites e observações
-
-- `.env` fica **somente no seu computador**, ignorado no Git. **Não armazene credenciais de terceiros em `config.js`**. Se houver chaves privadas no futuro, armazene-as em **Cloudflare Secrets**, nunca no frontend.
-- O frontend é público e precisa conhecer os endereços públicos de ambos os Workers para processamento paralelo. **Configuração por `.env` não torna as APIs privadas**. Para controlar acesso/custos, considere políticas de autenticação e limites de requisições na Cloudflare.
-- O proxy aceita URLs HTTPS de mídia apenas de `cdn.estrategiaconcursos.com.br`; links assinados podem expirar.
-- Cada Worker rejeita blocos WAV acima de 20 MB. Processamento grande consome memória e CPU do dispositivo do usuário e está sujeito às cotas dos serviços.
-- O modo de idioma Automático não define idioma no pedido do modelo; transcrições podem variar conforme a qualidade da gravação.
-
-## Tecnologias
-
-HTML, CSS, JavaScript, FFmpeg.wasm, Cloudflare Workers, Cloudflare Workers AI, Whisper, Netlify e Python 3 (somente na preparação local de deploy).
+O projeto mantém os nomes estáveis `worker-principal.js` e `worker-reserva.js`; versões anteriores permanecem no histórico do Git.

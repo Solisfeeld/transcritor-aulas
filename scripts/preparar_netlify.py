@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Prepara o deploy manual do Netlify a partir de .env (sem dependências)."""
+"""Prepara o site para o Netlify a partir do ambiente de build ou de .env local."""
 import json
+import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -13,7 +14,7 @@ VARIABLES = ("PRIMARY_WORKER_URL", "BACKUP_WORKER_URL")
 
 def load_env(path):
     if not path.is_file():
-        raise ValueError("Arquivo .env não encontrado. Copie .env.example para .env e configure as URLs.")
+        return {}
     env = {}
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
@@ -33,7 +34,7 @@ def load_env(path):
 
 def valid_url(name, raw):
     if not raw:
-        raise ValueError(f"Informe {name} no .env")
+        raise ValueError(f"Informe {name} nas variáveis de ambiente do Netlify ou no .env local")
     url = urlsplit(raw)
     if url.scheme != "https" or not url.netloc or not url.hostname:
         raise ValueError(f"{name} precisa ser URL HTTPS completa, por exemplo https://exemplo.workers.dev/")
@@ -46,6 +47,8 @@ def valid_url(name, raw):
 
 def main():
     settings = load_env(ENV_FILE)
+    # As variáveis do ambiente de build têm prioridade sobre o arquivo local.
+    settings.update({name: os.environ[name] for name in VARIABLES if name in os.environ})
     public = {name: valid_url(name, settings.get(name, "")) for name in VARIABLES}
     OUTPUT.mkdir(parents=True, exist_ok=True)
     for name in FILES:
@@ -56,7 +59,7 @@ def main():
     (OUTPUT / "config.js").write_text(js, encoding="utf-8")
     print("Deploy preparado em:", OUTPUT)
     print("Arquivos:", ", ".join([*FILES, "config.js"]))
-    print("Arraste a pasta deploy-netlify para Netlify > Deploys > deploy manual.")
+    print("Diretório de publicação: deploy-netlify (configurado em netlify.toml).")
     print("Obs.: config.js é público quando publicado, assim como as URLs dos Workers.")
 
 

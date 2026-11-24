@@ -1,4 +1,4 @@
-// Os endereços são injetados no deploy a partir do .env local.
+// Os endereços são injetados no deploy a partir das variáveis de ambiente do build ou do .env local.
 // config.js é gerado por scripts/preparar_netlify.py, não é versionado.
 const DEPLOY_CONFIG=window.TRANSCRITOR_CONFIG;
 if(!DEPLOY_CONFIG || !DEPLOY_CONFIG.PRIMARY_WORKER_URL || !DEPLOY_CONFIG.BACKUP_WORKER_URL){
@@ -96,13 +96,9 @@ document.querySelectorAll('input[name=mode]').forEach(x=>x.onchange=()=>{
 });
 
 function refreshIntervalEdges(){
- const fromBeginning=$("fromBeginning").checked;
- const untilEnd=$("untilEnd").checked;
- $("start").disabled=fromBeginning;
- $("end").disabled=untilEnd;
+ $("end").disabled=$("untilEnd").checked;
 }
 
-$("fromBeginning").addEventListener("change",refreshIntervalEdges);
 $("untilEnd").addEventListener("change",refreshIntervalEdges);
 refreshIntervalEdges();
 
@@ -316,7 +312,7 @@ async function engine(){
  if(ff)return ff;
 
  if(!window.crossOriginIsolated||typeof SharedArrayBuffer==="undefined"){
-  throw Error("O Netlify não ativou o isolamento necessário ao FFmpeg. Confirme que o arquivo _headers foi publicado e reabra o site.");
+  throw Error("A hospedagem não ativou o isolamento necessário ao FFmpeg. Verifique os cabeçalhos COOP e COEP e reabra o site.");
  }
  if(!window.FFmpeg)throw Error("Não foi possível carregar o FFmpeg.");
 
@@ -708,16 +704,13 @@ $("go").onclick=async()=>{
   }
 
   const mode=document.querySelector('input[name=mode]:checked').value;
-  const fromBeginning=mode==="part" && $("fromBeginning").checked;
   const untilEnd=mode==="part" && $("untilEnd").checked;
   let from=0,to=null,duration=null,requestedTo=null;
 
   if(mode==="part"){
-   if(!fromBeginning){
-    from=sec($("start").value);
-    if(!Number.isFinite(from)||from<0){
-     throw Error("Horário inicial inválido. Use exatamente HH:MM:SS, por exemplo 00:37:00.");
-    }
+   from=sec($("start").value);
+   if(!Number.isFinite(from)||from<0){
+    throw Error("Horário inicial inválido. Use exatamente HH:MM:SS, por exemplo 00:37:00.");
    }
 
    if(!untilEnd){
@@ -776,10 +769,6 @@ $("go").onclick=async()=>{
     }
    }
 
-   if(fromBeginning){
-    from=0;
-    $("start").value="00:00:00";
-   }
   }
 
   if(to<=from){

@@ -1,0 +1,3 @@
+[build]
+  command = "python3 scripts/preparar_netlify.py"
+  publish = "deploy-netlify"
